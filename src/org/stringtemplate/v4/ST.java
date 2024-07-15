@@ -43,6 +43,33 @@ import java.io.*;
 import java.lang.reflect.Array;
 import java.util.*;
 
+class WriteHelper {
+    File outputFile;
+    STErrorListener listener;
+    String encoding;
+    public WriteHelper(File outputFile, STErrorListener listener, String encoding) {
+        this.outputFile = outputFile;
+        this.listener = listener;
+        this.encoding = encoding;
+    }
+
+    public File getOutputFile() {
+        return outputFile;
+    }
+
+
+
+    public STErrorListener getListener() {
+        return listener;
+    }
+
+
+    public String getEncoding() {
+        return encoding;
+    }
+
+}
+
 /** An instance of the StringTemplate. It consists primarily of
  *  a {@linkplain ST#impl reference} to its implementation (shared among all
  *  instances) and a hash table of {@linkplain ST#locals attributes}.  Because
@@ -442,36 +469,37 @@ public class ST {
     }
 
     public int write(File outputFile, STErrorListener listener) throws IOException {
-        return write(outputFile, listener, "UTF-8", Locale.getDefault(), STWriter.NO_WRAP);
+        WriteHelper writeHelper = new  WriteHelper(outputFile, listener, "UTF-8");
+        return write(writeHelper, Locale.getDefault(), STWriter.NO_WRAP);
     }
 
     public int write(File outputFile, STErrorListener listener, String encoding)
         throws IOException
     {
-        return write(outputFile, listener, encoding, Locale.getDefault(), STWriter.NO_WRAP);
+        WriteHelper writeHelper = new  WriteHelper(outputFile, listener, encoding);
+        return write(writeHelper, Locale.getDefault(), STWriter.NO_WRAP);
     }
 
     public int write(File outputFile, STErrorListener listener, String encoding, int lineWidth)
         throws IOException
     {
-        return write(outputFile, listener, encoding, Locale.getDefault(), lineWidth);
+        WriteHelper writeHelper = new  WriteHelper(outputFile, listener, encoding);
+        return write(writeHelper, Locale.getDefault(), lineWidth);
     }
 
-    public int write(File outputFile,
-                     STErrorListener listener,
-                     String encoding,
+    public int write(WriteHelper writeHelper,
                      Locale locale,
                      int lineWidth)
         throws IOException
     {
         Writer bw = null;
         try {
-            FileOutputStream fos = new FileOutputStream(outputFile);
-            OutputStreamWriter osw = new OutputStreamWriter(fos, encoding);
+            FileOutputStream fos = new FileOutputStream(writeHelper.getOutputFile());
+            OutputStreamWriter osw = new OutputStreamWriter(fos, writeHelper.getEncoding());
             bw = new BufferedWriter(osw);
             AutoIndentWriter w = new AutoIndentWriter(bw);
             w.setLineWidth(lineWidth);
-            int n = write(w, locale, listener);
+            int n = write(w, locale, writeHelper.getListener());
             bw.close();
             bw = null;
             return n;

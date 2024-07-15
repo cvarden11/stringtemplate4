@@ -32,6 +32,7 @@ import org.stringtemplate.v4.compiler.Compiler;
 import org.stringtemplate.v4.debug.*;
 import org.stringtemplate.v4.gui.STViz;
 import org.stringtemplate.v4.misc.*;
+import org.stringtemplate.v4.MultiValueAttribute;
 
 import java.io.*;
 import java.lang.reflect.Array;
@@ -59,13 +60,13 @@ public class Interpreter {
     public enum Option { ANCHOR, FORMAT, NULL, SEPARATOR, WRAP }
     public static final int DEFAULT_OPERAND_STACK_SIZE = 100;
 
-    public static final Set<String> predefinedAnonSubtemplateAttributes;
+    public static final Set<String> presetAnonSubtempAttr;
 
     static {
         final Set<String> set = new HashSet<String>();
         set.add("i");
         set.add("i0");
-        predefinedAnonSubtemplateAttributes = Collections.unmodifiableSet(set);
+        presetAnonSubtempAttr = Collections.unmodifiableSet(set);
     }
 
     /** Operand stack, grows upwards. */
@@ -107,10 +108,6 @@ public class Interpreter {
      */
     protected List<InterpEvent> events;
 
-    public Interpreter(STGroup group, boolean debug) {
-        this(group,Locale.getDefault(),group.errMgr, debug);
-    }
-
     public Interpreter(STGroup group, Locale locale, boolean debug) {
         this(group, locale, group.errMgr, debug);
     }
@@ -130,14 +127,7 @@ public class Interpreter {
         }
     }
 
-//  public static int[] count = new int[Bytecode.MAX_BYTECODE+1];
 
-//  public static void dumpOpcodeFreq() {
-//      System.out.println("#### instr freq:");
-//      for (int i=1; i<=Bytecode.MAX_BYTECODE; i++) {
-//          System.out.println(count[i]+" "+Bytecode.instructions[i].name);
-//      }
-//  }
 
     /** Execute template {@code self} and return how many characters it wrote to {@code out}.
      *
@@ -184,7 +174,9 @@ public class Interpreter {
             switch (opcode) {
                 case Bytecode.INSTR_LOAD_STR :
                     // just testing...
-                    load_str(self,ip);
+                    int strIndex = getShort(self.impl.instrs, ip);
+                    ip += Bytecode.OPND_SIZE_IN_BYTES;
+                    operands[++sp] = self.impl.strings[strIndex];
                     ip += Bytecode.OPND_SIZE_IN_BYTES;
                     break;
                 case Bytecode.INSTR_LOAD_ATTR :
@@ -354,7 +346,7 @@ public class Interpreter {
                     break;
                 case Bytecode.INSTR_TOSTR :
                     // replace with string value; early eval
-                    operands[sp] = toString(out, scope, operands[sp]);
+                    operands[sp] = toString(out, scope, operands[sp], this);
                     break;
                 case Bytecode.INSTR_FIRST  :
                     operands[sp] = first(scope, operands[sp]);
@@ -455,16 +447,6 @@ public class Interpreter {
                     n += n1;
                     nwline += n1;
                     break;
-                // TODO: generate this optimization
-//              case Bytecode.INSTR_WRITE_LOCAL:
-//                  valueIndex = getShort(code, ip);
-//                  ip += Bytecode.OPND_SIZE_IN_BYTES;
-//                  o = self.locals[valueIndex];
-//                  if ( o==ST.EMPTY_ATTR ) o = null;
-//                  n1 = writeObjectNoOptions(out, self, o);
-//                  n += n1;
-//                  nwline += n1;
-//                  break;
                 default :
                     errMgr.internalError(self, "invalid bytecode @ "+(ip-1)+": "+opcode, null);
                     self.impl.dump();
@@ -479,14 +461,10 @@ public class Interpreter {
         return n;
     }
 
-    void load_str(ST self, int ip) {
-        int strIndex = getShort(self.impl.instrs, ip);
-        ip += Bytecode.OPND_SIZE_IN_BYTES;
-        operands[++sp] = self.impl.strings[strIndex];
-    }
+
 
     // TODO: refactor to remove dup'd code
-    void super_new(InstanceScope scope, String name, int nargs) {
+    private void super_new(InstanceScope scope, String name, int nargs) {
         final ST self = scope.st;
         ST st = null;
         CompiledST imported = self.impl.nativeGroup.lookupImportedTemplate(name);
@@ -505,7 +483,7 @@ public class Interpreter {
         operands[++sp] = st;
     }
 
-    void super_new(InstanceScope scope, String name, Map<String,Object> attrs) {
+    private void super_new(InstanceScope scope, String name, Map<String,Object> attrs) {
         final ST self = scope.st;
         ST st = null;
         CompiledST imported = self.impl.nativeGroup.lookupImportedTemplate(name);
@@ -524,7 +502,7 @@ public class Interpreter {
         operands[++sp] = st;
     }
 
-    void passthru(InstanceScope scope, String templateName, Map<String,Object> attrs) {
+    private void passthru(InstanceScope scope, String templateName, Map<String,Object> attrs) {
         CompiledST c = group.lookupTemplate(templateName);
         if ( c==null ) return; // will get error later
         if ( c.formalArguments==null ) return;
@@ -556,7 +534,7 @@ public class Interpreter {
         }
     }
 
-    void storeArgs(InstanceScope scope, Map<String,Object> attrs, ST st) {
+   private void storeArgs(InstanceScope scope, Map<String,Object> attrs, ST st) {
         boolean noSuchAttributeReported = false;
         if (attrs != null) {
             for (Map.Entry<String, Object> argument : attrs.entrySet()) {
@@ -635,7 +613,7 @@ public class Interpreter {
         }
     }
 
-    void storeArgs(InstanceScope scope, int nargs, ST st) {
+    private void storeArgs(InstanceScope scope, int nargs, ST st) {
         if ( nargs>0 && !st.impl.hasFormalArgs && st.impl.formalArguments==null ) {
             st.add(ST.IMPLICIT_ARG_NAME, null); // pretend we have "it" arg
         }
@@ -644,7 +622,7 @@ public class Interpreter {
         if ( st.impl.formalArguments!=null ) nformalArgs = st.impl.formalArguments.size();
         int firstArg = sp-(nargs-1);
         int numToStore = Math.min(nargs, nformalArgs);
-        if ( st.impl.isAnonSubtemplate ) nformalArgs -= predefinedAnonSubtemplateAttributes.size();
+        if ( st.impl.isAnonSubtemplate ) nformalArgs -= presetAnonSubtempAttr.size();
 
         if ( nargs < (nformalArgs-st.impl.numberOfArgsWithDefaultValues) ||
              nargs > nformalArgs )
@@ -847,7 +825,7 @@ public class Interpreter {
             ST proto = prototypes.get(0);
             ST st = group.createStringTemplateInternally(proto);
             if ( st!=null ) {
-                setFirstArgument(scope, st, attr);
+                setFirstArgument(scope, st, attr, this);
                 if ( st.impl.isAnonSubtemplate ) {
                     st.rawSetAttribute("i0", 0);
                     st.rawSetAttribute("i", 1);
@@ -873,7 +851,7 @@ public class Interpreter {
             ti++;
             ST proto = prototypes.get(templateIndex);
             ST st = group.createStringTemplateInternally(proto);
-            setFirstArgument(scope, st, iterValue);
+            setFirstArgument(scope, st, iterValue, this);
             if ( st.impl.isAnonSubtemplate ) {
                 st.rawSetAttribute("i0", i0);
                 st.rawSetAttribute("i", i);
@@ -912,7 +890,7 @@ public class Interpreter {
         // todo: track formal args not names for efficient filling of locals
         String[] formalArgumentNames = formalArguments.keySet().toArray(new String[formalArguments.size()]);
         int nformalArgs = formalArgumentNames.length;
-        if ( prototype.isAnonSubtemplate() ) nformalArgs -= predefinedAnonSubtemplateAttributes.size();
+        if ( prototype.isAnonSubtemplate() ) nformalArgs -= presetAnonSubtempAttr.size();
         if ( nformalArgs != numExprs ) {
             errMgr.runTimeError(this, scope,
                                       ErrorType.MAP_ARGUMENT_COUNT_MISMATCH,
@@ -957,215 +935,6 @@ public class Interpreter {
         return results;
     }
 
-    protected void setFirstArgument(InstanceScope scope, ST st, Object attr) {
-        if ( !st.impl.hasFormalArgs ) {
-            if ( st.impl.formalArguments==null ) {
-                st.add(ST.IMPLICIT_ARG_NAME, attr);
-                return;
-            }
-            // else fall thru to set locals[0]
-        }
-        if ( st.impl.formalArguments==null ) {
-            errMgr.runTimeError(this, scope,
-                                      ErrorType.ARGUMENT_COUNT_MISMATCH,
-                                      1,
-                                      st.impl.name,
-                                      0);
-            return;
-        }
-        st.locals[0] = attr;
-    }
-
-    protected void addToList(InstanceScope scope, List<Object> list, Object o) {
-        o = convertAnythingIteratableToIterator(scope, o);
-        if ( o instanceof Iterator ) {
-            // copy of elements into our temp list
-            Iterator<?> it = (Iterator<?>)o;
-            while (it.hasNext()) list.add(it.next());
-        }
-        else {
-            list.add(o);
-        }
-    }
-
-    /**
-     * Return the first attribute if multi-valued, or the attribute itself if
-     * single-valued.
-     * <p>
-     * This method is used for rendering expressions of the form
-     * {@code <names:first()>}.</p>
-     */
-    public Object first(InstanceScope scope, Object v) {
-        if ( v==null ) return null;
-        Object r = v;
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            Iterator<?> it = (Iterator<?>)v;
-            if ( it.hasNext() ) {
-                r = it.next();
-            }
-        }
-        return r;
-    }
-
-    /**
-     * Return the last attribute if multi-valued, or the attribute itself if
-     * single-valued. Unless it's a {@link List} or array, this is pretty slow
-     * as it iterates until the last element.
-     * <p>
-     * This method is used for rendering expressions of the form
-     * {@code <names:last()>}.</p>
-     */
-    public Object last(InstanceScope scope, Object v) {
-        if ( v==null ) return null;
-        if ( v instanceof List ) return ((List<?>)v).get(((List<?>)v).size()-1);
-        else if ( v.getClass().isArray() ) {
-            return Array.get(v, Array.getLength(v) - 1);
-        }
-        Object last = v;
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            Iterator<?> it = (Iterator<?>)v;
-            while ( it.hasNext() ) {
-                last = it.next();
-            }
-        }
-        return last;
-    }
-
-    /**
-     * Return everything but the first attribute if multi-valued, or
-     * {@code null} if single-valued.
-     */
-    public Object rest(InstanceScope scope, Object v) {
-        if ( v == null ) return null;
-        if ( v instanceof List ) { // optimize list case
-            List<?> elems = (List<?>)v;
-            if ( elems.size()<=1 ) return null;
-            return elems.subList(1, elems.size());
-        }
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            List<Object> a = new ArrayList<Object>();
-            Iterator<?> it = (Iterator<?>)v;
-            if ( !it.hasNext() ) return null; // if not even one value return null
-            it.next(); // ignore first value
-            while (it.hasNext()) {
-                Object o = it.next();
-                a.add(o);
-            }
-            return a;
-        }
-        return null;  // rest of single-valued attribute is null
-    }
-
-    /** Return all but the last element. <code>trunc(<i>x</i>)==null</code> if <code><i>x</i></code> is single-valued. */
-    public Object trunc(InstanceScope scope, Object v) {
-        if ( v ==null ) return null;
-        if ( v instanceof List ) { // optimize list case
-            List<?> elems = (List<?>)v;
-            if ( elems.size()<=1 ) return null;
-            return elems.subList(0, elems.size()-1);
-        }
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            List<Object> a = new ArrayList<Object>();
-            Iterator<?> it = (Iterator<?>) v;
-            while (it.hasNext()) {
-                Object o = it.next();
-                if ( it.hasNext() ) a.add(o); // only add if not last one
-            }
-            return a;
-        }
-        return null; // trunc(x)==null when x single-valued attribute
-    }
-
-    /** Return a new list without {@code null} values. */
-    public Object strip(InstanceScope scope, Object v) {
-        if ( v ==null ) return null;
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            List<Object> a = new ArrayList<Object>();
-            Iterator<?> it = (Iterator<?>) v;
-            while (it.hasNext()) {
-                Object o = it.next();
-                if ( o!=null ) a.add(o);
-            }
-            return a;
-        }
-        return v; // strip(x)==x when x single-valued attribute
-    }
-
-    /**
-     * Return a list with the same elements as {@code v} but in reverse order.
-     * <p>
-     * Note that {@code null} values are <i>not</i> stripped out; use
-     * {@code reverse(strip(v))} to do that.</p>
-     */
-    public Object reverse(InstanceScope scope, Object v) {
-        if ( v==null ) return null;
-        v = convertAnythingIteratableToIterator(scope, v);
-        if ( v instanceof Iterator ) {
-            List<Object> a = new LinkedList<Object>();
-            Iterator<?> it = (Iterator<?>)v;
-            while (it.hasNext()) a.add(0, it.next());
-            return a;
-        }
-        return v;
-    }
-
-    /**
-     * Return the length of a multi-valued attribute or 1 if it is a single
-     * attribute. If {@code v} is {@code null} return 0.
-     * <p>
-     * The implementation treats several common collections and arrays as
-     * special cases for speed.</p>
-     */
-    public Object length(Object v) {
-        if ( v == null) return 0;
-        int i = 1;      // we have at least one of something. Iterator and arrays might be empty.
-        if ( v instanceof Map ) i = ((Map<?, ?>)v).size();
-        else if ( v instanceof Collection ) i = ((Collection<?>)v).size();
-        else if ( v instanceof Object[] ) i = ((Object[])v).length;
-        else if ( v.getClass().isArray() ) i = Array.getLength(v);
-        else if ( v instanceof Iterable || v instanceof Iterator ) {
-            Iterator<?> it = v instanceof Iterable ? ((Iterable<?>)v).iterator() : (Iterator<?>)v;
-            i = 0;
-            while ( it.hasNext() ) {
-                it.next();
-                i++;
-            }
-        }
-        return i;
-    }
-
-    protected String toString(STWriter out, InstanceScope scope, Object value) {
-        if ( value!=null ) {
-            if ( value.getClass()==String.class ) return (String)value;
-            // if not string already, must evaluate it
-            StringWriter sw = new StringWriter();
-            STWriter stw;
-            try {
-                Class<? extends STWriter> writerClass = out.getClass();
-                Constructor<? extends STWriter> ctor = writerClass.getConstructor(Writer.class);
-                stw = ctor.newInstance(sw);
-            }
-            catch (Exception e) {
-                stw = new AutoIndentWriter(sw);
-                errMgr.runTimeError(this, scope, ErrorType.WRITER_CTOR_ISSUE, out.getClass().getSimpleName());
-            }
-
-            if (debug && !scope.earlyEval) {
-                scope = new InstanceScope(scope, scope.st);
-                scope.earlyEval = true;
-            }
-
-            writeObjectNoOptions(stw, scope, value);
-
-            return sw.toString();
-        }
-        return null;
-    }
 
     public Object convertAnythingIteratableToIterator(InstanceScope scope, Object o) {
         Iterator<?> iter = null;
@@ -1189,7 +958,7 @@ public class Interpreter {
         return iter;
     }
 
-    public Iterator<?> convertAnythingToIterator(InstanceScope scope, Object o) {
+    private Iterator<?> convertAnythingToIterator(InstanceScope scope, Object o) {
         o = convertAnythingIteratableToIterator(scope, o);
         if ( o instanceof Iterator ) return (Iterator<?>)o;
         List<Object> singleton = new ST.AttributeList(1);
@@ -1235,7 +1004,7 @@ public class Interpreter {
      * <p>
      * Return {@link ST#EMPTY_ATTR} if found definition but no value.</p>
      */
-    public Object getAttribute(InstanceScope scope, String name) {
+    private Object getAttribute(InstanceScope scope, String name) {
         InstanceScope current = scope;
         while ( current!=null ) {
             ST p = current.st;
@@ -1257,7 +1026,7 @@ public class Interpreter {
         throw new STNoSuchAttributeException(name, scope);
     }
 
-    public Object getDictionary(STGroup g, String name) {
+    private Object getDictionary(STGroup g, String name) {
         if ( g.isDictionary(name) ) {
             return g.rawGetDictionary(name);
         }
@@ -1278,7 +1047,7 @@ public class Interpreter {
      * The evaluation context is the {@code invokedST} template itself so
      * template default arguments can see other arguments.</p>
      */
-    public void setDefaultArguments(STWriter out, InstanceScope scope) {
+    private void setDefaultArguments(STWriter out, InstanceScope scope) {
         final ST invokedST = scope.st;
         if ( invokedST.impl.formalArguments==null ||
              invokedST.impl.numberOfArgsWithDefaultValues==0 ) {

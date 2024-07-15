@@ -273,4 +273,18 @@ public class CompiledST implements Cloneable {
         pw.close();
         return sw.toString();
     }
+
+
+    public String getsourceMapString() {
+        StringBuilder buf = new StringBuilder();
+        int addr = 0;
+        for (Interval I : sourceMap) {
+            if ( I!=null ) {
+                String chunk = template.substring(I.a,I.b+1);
+                buf.append( String.format("%04d: %s\t\"%s\"\n", addr, I, chunk) );
+            }
+            addr++;
+        }
+        return buf.toString();
+    }
 }

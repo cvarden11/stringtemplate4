@@ -27,7 +27,6 @@
  */
 package org.stringtemplate.v4.compiler;
 
-import org.stringtemplate.v4.misc.Interval;
 import org.stringtemplate.v4.misc.Misc;
 
 import java.util.ArrayList;
@@ -156,15 +155,8 @@ public class BytecodeDisassembler {
     }
 
     public String sourceMap() {
-        StringBuilder buf = new StringBuilder();
-        int addr = 0;
-        for (Interval I : code.sourceMap) {
-            if ( I!=null ) {
-                String chunk = code.template.substring(I.a,I.b+1);
-                buf.append( String.format("%04d: %s\t\"%s\"\n", addr, I, chunk) );
-            }
-            addr++;
-        }
-        return buf.toString();
+        return code.getsourceMapString();
     }
+
+
 }

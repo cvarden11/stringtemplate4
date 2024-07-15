@@ -113,29 +113,35 @@ public class STViz {
         List<InterpEvent> events = currentScope.events;
         tmodel = new JTreeSTModel(interp, (EvalTemplateEvent)events.get(events.size()-1));
         viewFrame.tree.setModel(tmodel);
-        viewFrame.tree.addTreeSelectionListener(
-            new TreeSelectionListener() {
-                @Override
-                public void valueChanged(TreeSelectionEvent treeSelectionEvent) {
-                    int depth = updateDepth.incrementAndGet();
-                    try {
-                        if (depth != 1) {
-                            return;
-                        }
-
-                        currentEvent = ((JTreeSTModel.Wrapper)viewFrame.tree.getLastSelectedPathComponent()).event;
-                        currentScope = currentEvent.scope;
-                        updateCurrentST(viewFrame);
-                    }
-                    finally {
-                        updateDepth.decrementAndGet();
-                    }
-                }
-            }
-        );
+        treeListenerHelper();
 
         JTreeASTModel astModel = new JTreeASTModel(new CommonTreeAdaptor(), currentScope.st.impl.ast);
         viewFrame.ast.setModel(astModel);
+        getAddedTreeSelectionListener();
+
+
+        CaretListener caretListenerLabel = getCaretListener();
+
+        viewFrame.output.addCaretListener(caretListenerLabel);
+
+        // ADD ERRORS
+        if ( errors==null || errors.size()==0 ) {
+            viewFrame.errorScrollPane.setVisible(false); // don't show unless errors
+        }
+        else {
+            final DefaultListModel errorListModel = new DefaultListModel();
+            for (STMessage msg : errors) {
+                errorListModel.addElement(msg);
+            }
+            viewFrame.errorList.setModel(errorListModel);
+        }
+
+        sectionListenerHelper();
+        openHelper();
+
+    }
+
+    private void getAddedTreeSelectionListener() {
         viewFrame.ast.addTreeSelectionListener(
             new TreeSelectionListener() {
                 @Override
@@ -160,70 +166,9 @@ public class STViz {
                 }
             }
         );
+    }
 
-        // Track selection of attr but do nothing for now
-//        viewFrame.attributes.addListSelectionListener(
-//            new ListSelectionListener() {
-//                public void valueChanged(ListSelectionEvent e) {
-//                    int minIndex = viewFrame.attributes.getMinSelectionIndex();
-//                    int maxIndex = viewFrame.attributes.getMaxSelectionIndex();
-//                    for (int i = minIndex; i <= maxIndex; i++) {
-//                        if (viewFrame.attributes.isSelectedIndex(i)) {
-//                            //System.out.println("index="+i);
-//                        }
-//                    }
-//                }
-//            }
-//        );
-
-        CaretListener caretListenerLabel = new CaretListener() {
-            @Override
-            public void caretUpdate(CaretEvent e) {
-                int depth = updateDepth.incrementAndGet();
-                try {
-                    if (depth != 1) {
-                        return;
-                    }
-
-                    int dot = toEventPosition((JTextComponent)e.getSource(), e.getDot());
-                    currentEvent = findEventAtOutputLocation(allEvents, dot);
-                    if ( currentEvent==null ) currentScope = tmodel.root.event.scope;
-                    else currentScope = currentEvent.scope;
-
-                    // update tree view of template hierarchy
-                    // compute path from root to currentST, create TreePath for tree widget
-                    List<EvalTemplateEvent> stack = Interpreter.getEvalTemplateEventStack(currentScope, true);
-                    //System.out.println("\nselect path="+stack);
-                    Object[] path = new Object[stack.size()];
-                    int j = 0;
-                    for (EvalTemplateEvent s : stack) {
-                        path[j++] = new JTreeSTModel.Wrapper(s);
-                    }
-                    TreePath p = new TreePath(path);
-                    viewFrame.tree.setSelectionPath(p);
-                    viewFrame.tree.scrollPathToVisible(p);
-                    updateCurrentST(viewFrame);
-                }
-                finally {
-                    updateDepth.decrementAndGet();
-                }
-            }
-        };
-
-        viewFrame.output.addCaretListener(caretListenerLabel);
-
-        // ADD ERRORS
-        if ( errors==null || errors.size()==0 ) {
-            viewFrame.errorScrollPane.setVisible(false); // don't show unless errors
-        }
-        else {
-            final DefaultListModel errorListModel = new DefaultListModel();
-            for (STMessage msg : errors) {
-                errorListModel.addElement(msg);
-            }
-            viewFrame.errorList.setModel(errorListModel);
-        }
-
+    private void sectionListenerHelper() {
         viewFrame.errorList.addListSelectionListener(
             new ListSelectionListener() {
                 @Override
@@ -260,8 +205,69 @@ public class STViz {
                 }
             }
         );
+    }
 
-        Border empty = BorderFactory.createEmptyBorder();
+    private CaretListener getCaretListener() {
+        CaretListener caretListenerLabel = new CaretListener() {
+            @Override
+            public void caretUpdate(CaretEvent e) {
+                int depth = updateDepth.incrementAndGet();
+                try {
+                    if (depth != 1) {
+                        return;
+                    }
+
+                    int dot = toEventPosition((JTextComponent)e.getSource(), e.getDot());
+                    currentEvent = findEventAtOutputLocation(allEvents, dot);
+                    if ( currentEvent==null ) currentScope = tmodel.root.event.scope;
+                    else currentScope = currentEvent.scope;
+
+                    // update tree view of template hierarchy
+                    // compute path from root to currentST, create TreePath for tree widget
+                    List<EvalTemplateEvent> stack = Interpreter.getEvalTemplateEventStack(currentScope, true);
+                    //System.out.println("\nselect path="+stack);
+                    Object[] path = new Object[stack.size()];
+                    int j = 0;
+                    for (EvalTemplateEvent s : stack) {
+                        path[j++] = new JTreeSTModel.Wrapper(s);
+                    }
+                    TreePath p = new TreePath(path);
+                    viewFrame.tree.setSelectionPath(p);
+                    viewFrame.tree.scrollPathToVisible(p);
+                    updateCurrentST(viewFrame);
+                }
+                finally {
+                    updateDepth.decrementAndGet();
+                }
+            }
+        };
+        return caretListenerLabel;
+    }
+
+    private void treeListenerHelper() {
+        viewFrame.tree.addTreeSelectionListener(
+            new TreeSelectionListener() {
+                @Override
+                public void valueChanged(TreeSelectionEvent treeSelectionEvent) {
+                    int depth = updateDepth.incrementAndGet();
+                    try {
+                        if (depth != 1) {
+                            return;
+                        }
+
+                        currentEvent = ((JTreeSTModel.Wrapper)viewFrame.tree.getLastSelectedPathComponent()).event;
+                        currentScope = currentEvent.scope;
+                        updateCurrentST(viewFrame);
+                    }
+                    finally {
+                        updateDepth.decrementAndGet();
+                    }
+                }
+            }
+        );
+    }
+
+    public void openHelper(){        Border empty = BorderFactory.createEmptyBorder();
         viewFrame.treeContentSplitPane.setBorder(empty);
         viewFrame.outputTemplateSplitPane.setBorder(empty);
         viewFrame.templateBytecodeTraceTabPanel.setBorder(empty);

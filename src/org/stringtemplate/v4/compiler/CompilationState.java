@@ -71,7 +71,7 @@ public class CompilationState {
             emit1(id, Bytecode.INSTR_LOAD_LOCAL, index);
         }
         else {
-            if ( Interpreter.predefinedAnonSubtemplateAttributes.contains(name) ) {
+            if ( Interpreter.presetAnonSubtempAttr.contains(name) ) {
                 errMgr.compileTimeError(ErrorType.REF_TO_IMPLICIT_ATTRIBUTE_OUT_OF_SCOPE,
                                         templateToken, id.token);
                 emit(id, Bytecode.INSTR_NULL);
